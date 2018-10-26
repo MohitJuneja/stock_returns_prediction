@@ -4,14 +4,14 @@
 
 ## Introduction
 
-Can we actually predict stock prices with Machine Learning? 
+***Can we actually predict stock prices with Machine Learning?***
 
 Investors make educated guesses by analyzing data. They'll read the news, study the company history, industry, trends...  There are lots of data points that go into malking a predction. 
 The prevailing theory is that stock prices are totally random and unpredicatble. A blind-folded monkey throwing darts at a newspaper's financial pages could select a protfolio that could do just as well as one carefully selected by experts. 
 
 But that raises the question, why do top firms like Morgan Stanley and citigroup hire quantitative analysts to go build predictive models. We have this idea of a trading floor filled with adrenalined-infused men, with loose ties, running around, yelling something into a phone. But these days are more likely to see rows of ML experts quietly sitting in front of computer screens in fact about 70% of all orders on Wall street are now placed by software. 
 
-We are now living in the age of algorithms. 
+In this competition, I must predict a signed confidence value, ŷ ti∈[−1,1] , which is multiplied by the market-adjusted return of a given assetCode over a ten day window. If a stock is expected to have a large positive return *compared to the broad market* over the next ten days, a large, positive confidenceValue (near 1.0) should be assigned. If the stock is expected to have a negative return, a large, negative confidenceValue (near -1.0) must be assigned. If unsure, assign it a value near zero.
 
 ## Question: 
 
@@ -51,9 +51,11 @@ This dataset contains market data from February 2007 to December 2016
 | returnsOpenPrevMktres10| Returns calculated open-to-open for market-residualized (MKtres) for previous 10 days | float64 |
 | returnsOpenNextMktres10| Returns calculated open-to-open for market-residualized (MKtres) for next 10 days | float64 |
 
+The **target label** is returnsOpenNextMktres10. In the training set for date t, this is the return from t+1 market open to t+10 market open.
+
 #### News
 
-Contains news data from January 2007 to December 2016
+Contains news articles/alerts data from January 2007 to December 2016
 
 - Data Set Characteristics:
     - Number of Instances: 9328750
@@ -98,71 +100,114 @@ Contains news data from January 2007 to December 2016
 | volumeCounts5D| same as above, but for 5 days | int16 |
 | volumeCounts7D| same as above, but for 7 days | int16 |
 
-## Algorithm
-1. Data Acquisition
-2. Preprocessing
-    - Prep the news dataframe by expanding the data for every assetCode. 
-    - The news info needs to be grouped by the day determined by the market column called *'time'*. 
-        - Since merging is based in time: From yesterday at 22h01 til today at 22h
-    - Merge news and market dataframes (by assetCode and time): At this point 
-3. Training: 
-    The training data given is controled by time. 
-2. Testing
-    - market_obs_df, news_obs_df, predictions_template_df
-    - For every assetCode in the predictions_template_df test your model to get the confidence interval. 
-    - The validation process involves 628 iterations. For every iteration it is given a market data for a day D and news informations starting at 10:01pm on the previous day til day D at 10pm. 
+## Schema
+
+- **Data Acquisition**
+    - Import the module and create an environment within Kaggle's kernel
+    - Get the training data into dataframes
+- **Preprocessing**
+    - Resampling and Triming (for memory reasons)
+    - Normalization
+    - We are converting the target variable (returnsOpenNextMktres10) to either 0 or 1.
+- **EDA**
+- **Feature Selection**
+- **Modelization**
+    - Dataset division in training and test. 
+    - Optimization (training) approaches:
+- **Prediction**
+    - Predicting returnsOpenNextMktres10
+    - *get_prediction_days* is a generator which loops through each day and provides all market and news observations which occurred since the last data you've received. 
+- **Evaluation**
+- **Results submission**
+    - predictions_df: DataFrame which must have the following columns:
+        - assetCode: The market asset.
+        - confidenceValue: Your confidence whether the asset will increase or decrease in 10 trading days. All values must be in the range [-1.0, 1.0].
+    - Store your predictions for the current prediction day with the kaggle function *predict*
+    - write_submission_file
+
+## Data Acquisition
+
+Kaggle provides the following functions to retrieve the two dataframes:
+
+```python
+# First let's import the module and create an environment.
+from kaggle.competitions import twosigmanews
+# You can only call make_env() once, so don't lose it!
+env = twosigmanews.make_env()
+(market_train_df, news_train_df) = env.get_training_data()
+```
 
 ## Preprocessing
-### MARKET
-#### Feature Selection
 
-To recall I'm going to model the prediction of the variable for each asset code.  
-There are a few assetCodes pertaining to the same asset, because of this reason and the fact there are assets whose name is unknown and yet they have valid unique asset codes, that I will keep the asset codes and get rid of the asset names. 
+### Clipping target variable to be between 0 and 1
 
+It's important to consider that the Market table has the target variable called *returnsOpenNextMktres10* with a domain in the natural numbers.
+
+### Normalization:
+
+I will use the log transform to normalize these highly skewed features. Since they can have negative values the process will start with a translation by a constant then the transformation by the log.
+
+### Trimming dataset from useless columns
+
+There are a few assetCodes pertaining to the same asset (assetName), because of this reason and the fact there are assets whose name is unknown and yet they have valid unique asset codes, that I will keep the asset codes and get rid of the variable assetNames. 
 
 Some Missing Values and their %: 
     - returnsClosePrevMktres1	0.392344
     - returnsOpenPrevMktres1	0.392540
     - returnsClosePrevMktres10	2.283599
     - returnsOpenPrevMktres10	2.284680
-In other words I cannot count with the residualized open-to-open and close-to-close for one day and 10 days. Since they show a high correaltion with their homologue raw features unless they show an improvement to the classifier's performance they will be added as an upgrade. 
-
-As for the news info, there are pieces of news that refer to 1 or more asset codes, therefore Im going to transform the news table so that it will be indexed by a single and unique asset code. This means that the number of rows will increase adding more redundancy to the training dataset. (Can this be avoided?)
-Furthermore I'm leaving out of the feature selection: the headline, take sequence, provider, headlinetag and assetName since at first glance they are not fit to relate with the stock change. 
+In other words I cannot count with the residualized open-to-open and close-to-close for one day and 10 days since they show a high correaltion with their homologue raw features and unless they show an improvement to the classifier's performance they will be added as an upgrade. 
 
 
-#### Normalization
+### Prep the news and market tables to be merged into one. 
 
-I will use the log transform to normalize these highly skewed features. Since they can have negative values the process will start with a translation by a constant then the transformation by the log.
+Since Im using features in both tables it's easier to merge them. The key in common between the tables is the assetCode and time. But first a small manip needs to be performed unto the news table since every row can contain 1 or more asset codes. 
+
+1. Consolidate times (remove the time and leave the date)
+    - The news info needs to be grouped by the day determined by the market column called *'time'*. 
+    - Since merging is based in time: From yesterday at 22h01 til today at 22h
+2. Asset Code expansion
+    As for the news info, there are pieces of news that refer to 1 or more asset codes, therefore Im going to transform the news table so that it will be indexed by a single and unique asset code. This means that the number of rows will increase adding more redundancy to the training dataset. (Can this be avoided?)
+    Furthermore I'm leaving out of the feature selection: the headline, take sequence, provider, headlinetag and assetName since at first glance they are not fit to relate with the stock change. 
+3. Group the news by their date and median
+    The pieces of news for a specific asset code and timeframe (market day) will be consolidated into one row as shown below: 
+    Before: 
+    ![**Figure News Corr**](news_in_same_date.png)
+    After: 
+    ![**Figure News Corr**](news_same_date_grouped.png)
+    Notice that the feature values have not taken into consideration but rather their metrics of spread. 
+    Then the news table is merged with the market one by time and assetcode respectively as shown below
+    ![**Figure News Corr**](preprocessed_table.png)
+4. Merge the market data with their respective news info by their date and asset code. 
 
 
-#### Vectorization
 
-Since Im using features in both tables it's easier to merge them. It's important to consider that the Market table has the target variable called *returnsOpenNextMktres10* with a domain in the natural numbers. The key in common between the tables is the assetCode. But first a small manip needs to be performed unto the news table since every row can contain 1 or more asset codes. 
+### Feature Engineering
 
-#### Feature Engineering
-
+- t-statistic for the time features
 - Time features: 
     - time(datetime64[ns, UTC]) - UTC timestamp showing when the data was available on the feed (second precision)
     - sourceTimestamp(datetime64[ns, UTC]) - UTC timestamp of this news item when it was created
     - firstCreated(datetime64[ns, UTC]) - UTC timestamp for the first version of the item
 
-In other words: *time >= sourceTimestamp >= firstCreated*  
 ***Are these time features statistically significant to consider each one of them?*** If so they can be feature-engineered by their time-difference from the news piece's origin (firstCreated). 
 
-- t-statistic for the time features
+I could consolidate these range into one single datetime variable. In other words: *time >= sourceTimestamp >= firstCreated* For now I will choose time as the only time feature. 
+
+
 - There are 1631 unique subjects and every asset has in average 20. 
 - There are 191 unique audiences and every asset has an average of 5. 
 
 ## EDA
 
-#### News
+#### News with normalized variables
 
 ![**Figure News Corr**](prepro_news_log.png)
 
+
 ![**Figure News Corr**](news_corr_log.png)
 
-#### Market
+#### Market with normalized variables
 
 ![**Figure News Corr**](prepro_mkt_log.png)
 
@@ -176,3 +221,10 @@ Logit regressors are commonly used to estimate the probability that an instance 
 
 ## Intial research and Results
 Build a 10 day window 
+
+---
+## LIMITATIONS
+- Since this is a Kernels-only, time-based competition, I'm bound to use the kaggle kernel which is not very practical nor fast. I'm bound to make sure every test I make on their kernel is correctly designed (so there is no time wasting with simple errors). This is designed to simulate the volume, timeline, and the computational burden that real future data will introduce.
+- The assetCode is not guaranteed to be unique over time. Here I specifically chose AAPL.O because we all know Apple hasn't changed it's ticker symbol. But that's not guaranteed so you have to be very careful. 
+
+---
