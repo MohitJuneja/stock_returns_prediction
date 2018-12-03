@@ -64,7 +64,6 @@ In the second row of the above graph, the features representing the size of the 
 
 In the figure above the features of size prove a high correlation which is not a surprise. In the dimensionality reduction module I might consider removing some. The feature *sentimentClass* is positively correlated with the *sentimentPositive* feature and negatively correlated with the *sentimentNegative* feature. 
 
-
 ## Data Acquisition
 
 Kaggle provides the following functions to retrieve the two dataframes:
@@ -78,75 +77,88 @@ env = twosigmanews.make_env()
 ```
 
 ## Preprocessing
+#### 1. Memory Management
 
-### Normalizing taget value
+Since memory management is really important in this competition (as their internal kernel doesn't support operations between features or dimensionality reduction algorithms like lle or t-sne), here are a few tricks I am using (with python):
 
-It's important to consider that the Market table has the target variable called *returnsOpenNextMktres10* with a domain in the natural numbers. The action is to clip it to be between 0 and 1. 0 if the return is negative and therefore the stock price did not rise and 1 otherwise.  
+- Performing pandas operations inplace as much as possible
+- Deleting unused frames, series and arrays
+- *Using manual garbage collection (gc.collect) after deleting objects*
+- Set universe column to int8 type
+- Set all float columns from float64 to float32 (maybe float16?)
 
-### Normalization:
+Additionally a memory saving function credit to https://www.kaggle.com/gemartin/load-data-reduce-memory-usage
 
-I will use the log transform to normalize these highly skewed features. Since they can have negative values the process will start with a translation by a constant then the transformation by the log.
+#### 2. Normalizing taget value
 
-### Trimming dataset from useless columns
+The Market table has the target variable called *returnsOpenNextMktres10* with a domain in the natural numbers. The action is to clip it to be between 0 and 1. The target variable will have a value of 0 if the return is negative and therefore the stock price went down otherwise it will have a value of 1. The objective of this project is to submit the probability that the stock will rise or go down. 
+
+#### 3. Trimming dataset from useless columns
 
 There are a few assetCodes pertaining to the same asset (assetName), because of this reason and the fact there are assets whose name is unknown and yet they have valid unique asset codes, that I will keep the asset codes and get rid of the variable assetNames. 
 
-Some Missing Values and their %: 
-    - returnsClosePrevMktres1	0.392344
-    - returnsOpenPrevMktres1	0.392540
-    - returnsClosePrevMktres10	2.283599
-    - returnsOpenPrevMktres10	2.284680
-In other words I cannot count with the residualized open-to-open and close-to-close for one day and 10 days since they show a high correaltion with their homologue raw features and unless they show an improvement to the classifier's performance they will be added as an upgrade. 
+Furthermore some other columns will be removed as I later found out (in the feature selection) part that they dont have any prediction power. 
 
+#### 4. Feature Engineering
 
-### Prep the news and market tables to be merged into one. 
+From the remaining columns I could extract more information thanks to the fact that there were more news records within a business day, so I chose the median and standard deviation for some features and the sum of those features that were correlated like the noveltyCount (12H, 24H, ...) to finally calculate their median and std. 
 
-Since Im using features in both tables it's easier to merge them. The key in common between the tables is the assetCode and time. But first a small manip needs to be performed unto the news table since every row can contain 1 or more asset codes. 
+#### 5. Merging the news with the market data. 
 
-1. Consolidate times
-    - The news info needs to be grouped by the day determined by the market column called *'time'*. 
-    - Since merging is based in time: From yesterday at 22h01 til today at 22h
-        - i.e: 
-            - 2007-01-01 22:00:01+00:00 -> 2007-01-02 
-            - 2007-01-01 21:59:59+00:00 -> 2007-01-01
+Since Im using features in both tables it's easier to merge them. The key in common between the tables is the assetCode and time. But first a small manipulation needs to be performed unto the news table since every row can contain 1 or more asset codes. 
+
+1. Consolidate dates
 2. Asset Code expansion
-    As for the news info, there are pieces of news that refer to 1 or more asset codes, therefore Im going to transform the news table so that it will be indexed by a single and unique asset code. This means that the number of rows will increase adding more redundancy to the training dataset. (Can this be avoided?)
-    Furthermore I'm leaving out of the feature selection: the headline, take sequence, provider, headlinetag and assetName since at first glance they are not fit to relate with the stock change. 
-    ![**Figure News Corr**](images/news_xpan.png)
 3. Group the news by their date and median
-    The pieces of news for a specific asset code and timeframe (market day) will be consolidated into one row as shown below: 
-    ![**Figure News Corr**](images/nws_median.png)
-    Notice that the feature values have not taken into consideration but rather their metrics of spread. In this case they are going to be median, std, min and max.
-    Then the news table is merged with the market one by time and assetcode respectively as shown below
-    ![**Figure News Corr**](images/nws_comp.png)
-4. Merge the market data with their respective news info by their date and asset code. 
 
+## Dimensionality Reduction
 
-## Intial research and Results
+The kaggle kernel doesn't have much capacity to perform complex functions like PCA Kernel, GridSearch and ensemble modeling so my first approach is to reduce the number of features. Nonetheless the kernel dies when the whole dataset is preprocessing, so I divided the dataset in 3 partitions, each pertaining to 3 years of data and proceeded to optimize the current feature set. 
 
-A good place to start is with a Stochastic Gradient Descent (SGD) classifier, using Scikit-Learn’s SGDClassifier class which uses a linear classifier such as SVM or logistic regression with SGD training. 
+#### 1. Feature (Importance) Selection
 
-``` python
-from sklearn.linear_model import SGDClassifier
-```
+A score will be assigned to each feature reflecting an increase (or decrease) in the classifier's performance metrics. These metrics are: Accuracy, Area under the Curve (AUC), F1 score (which takes in consideration the Precision and Recall) and Mean Squared Error (MSE). 
 
-Based on the confusion matrix, the classifier correctly predicted 2609 instances with negative stock returns, and missed 6200. Correctly predicted 6821 instances going upwards but missed 2645. 
+If the score is greater than zero, the feature increases the classifier's prediction power. 
+For every classifier the scores will be calculated and only those scores above 0 will be kept. 
 
-![**Figure News Corr**](images/results1classifier.png)
+Then to select the K best features a one score to qualify them all is defined as below: 
 
-In this project the aim is to have similar values in precision and recall. Increasing recall will make this model to make sure it doesnt miss any stock in the rise, but some of its predictions will be incorrect. The threshold is therefore correctly placed at 0 maximizing the f1 score. 
+> Score = $^1/_2[(1-MSE)+^1/_3\sum_{i=1}^{3} p\_score_i]$ and $p\_score ∈ [Acc, AUC, F1]$
 
-The precision/recall curve doesnt have a conventional shape. It shows that the precision will always be between 0.4 and 0.6 no matter the recall. 
+For each classifier the features whose score was positive, qualified to be in a feature set that later got tested with every classifier. 
 
-The ROC curve shows the nature of this SDG classifier: just a purely random classifier. 
+The linear SVM with gradient descent (**SGD**) showed results above the dummy classifier's along with the **Logistic Regressor** and the **Decision Trees** who also happen to have the same feature set.
 
-These are the results of the evaluation metrics: 
+Overall analyzing the elected feature sets, all of the features in the dataset happened to be included, so the best feature would be that one that is in most feature sets and with a high importance. Below is a (unscaled) scatter plot of the presence of the features in the determined classifiers' feature sets (x) vs its predictive power (the lower the value the more predictive). 
 
-- Accuracy: 0.51
-- Precision: 0.52
-- Recall: 0.72
-- F1Score: 0.61
-- AUC: 0.499
+![**Figure News Corr**](images/Unscaled Feature_selection_sets.png)
+
+A simple KNN will order the feaures in terms of their performance and presence in the sets.
+
+This feature set has 62% of variables relative to the news which get's in axis with the project's goal in using the news as primary source of predictors. The figure below shows the distributions per class of four of the best features.
+
+![**Figure News Corr**](images/top4feats.png)
+
+The separability power of these features, as you can see, is not evident. However they make the classifier achieve the highest scores. This drastically reduces the dataset from 49 to 16 columns and the preprocessing script, which couldn't complete (as the kernel kept dying), now finishes within the 16 minute mark for the whole dataset. 
+
+#### 2. PCA & LDA
+
+The top 16 features proved to be the most useful in presenting the best results from the whole feature set. Furthermore I performed PCA to see if there could be a better score. In parallel I also performed LDA on the optimal feature set and the analysis showed that Decision Trees and SGD performed best with LDA and the Logistic regression classifier got the highest score with data that had already gone through PCA with 8 components. So for the baseline mode these are the elected classifiers.
+
+## Model Selection
+
+#### 1. Hyper-parameter tuning
+
+Once again the SGD and Decision trees classifiers performed better with the 16 features previously established (the logistic regressor kept its place with the dataset transformed by PCA-8).
+
+I also tested the random forests and extra trees classifier but turned out to be outperformed by our trio of classifiers. However there might be a way that I can combine these models to get better results through the **voting ensemble method**
+
+#### 2. Ensemble Training and Boosting
+
+After optimizing the set of 5 with bagging, pasting and boosting the best scores were obtained by the SGD and the Decision Trees classifier, the voting using these two classifiers outweighed their own individual performance: 
+![**Figure News Corr**](images/optimized_clfs.png)
+
 
 ## Future improvements
 
