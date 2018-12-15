@@ -127,8 +127,7 @@ For every classifier the scores will be calculated and only those scores above 0
 
 Then to select the K best features a one score to qualify them all is defined as below: 
 
-> Score = ^1/_2[(1-MSE)+^1/_3\sum_{i=1}^{3} p_score_i] 
-and p_score ∈ [Acc, AUC, F1]
+![**Figure News Corr**](images/score_formula.png)
 
 The elected feature set has 62% of variables relative to the news which get's in axis with the project's goal in using the news as primary source of predictors. The figure below shows the distributions per class of four of the best features.
 
@@ -151,9 +150,8 @@ I also tested the random forests and extra trees classifier but turned out to be
 #### 2. Ensemble Training and Boosting
 
 After optimizing the set of 5 with bagging, pasting and boosting the best scores were obtained by the SGD, the Decision Trees classifier and the Gradient Boosting method, the hard voting using these classifiers outweighed their own individual performance: 
+
 ![**Figure News Corr**](images/Final_comparison.png)
-
-
 
 ## Future improvements
 
